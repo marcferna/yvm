@@ -7,29 +7,6 @@ const url = require('url')
 
 const log = (...args) => console.log(...args) // eslint-disable-line no-console
 
-const dependencies = ['unzip']
-
-function preflightCheck(...dependencies) {
-    const missing = []
-    dependencies.forEach(pkg => {
-        try {
-            execSync(`command -v ${pkg}`)
-        } catch (e) {
-            missing.push(pkg)
-        }
-    })
-    if (missing.length) {
-        const prepzn = missing.length > 1 ? 'are' : 'is'
-        throw new Error(
-            `The install cannot proceed due missing dependencies.
-"${missing.join('", "')}" ${prepzn} not installed or in your PATH.`,
-        )
-    }
-    log('All dependencies satisfied.')
-}
-
-const zipFile = 'yvm.zip'
-
 function getConfig() {
     const home = process.env.HOME || os.homedir()
     const useLocal = process.env.USE_LOCAL || false
@@ -39,8 +16,6 @@ function getConfig() {
             home,
             yvm: yvmDir,
             yvmSh: path.join(yvmDir, 'yvm.sh'),
-            yarnShim: path.join(yvmDir, 'shim', 'yarn'),
-            zip: path.join(useLocal ? 'artifacts' : yvmDir, zipFile),
         },
         releaseApiUrl: 'https://d236jo9e8rrdox.cloudfront.net/yvm-releases',
         releasesApiUrl: 'https://api.github.com/repos/tophat/yvm/releases',
@@ -193,7 +168,7 @@ async function removeFile(filePath) {
 }
 
 async function cleanYvmDir(yvmPath) {
-    const filesNotToRemove = new Set(['versions', zipFile])
+    const filesNotToRemove = new Set(['versions'])
     const filesToRemove = fs
         .readdirSync(yvmPath)
         .filter(f => !filesNotToRemove.has(f))
@@ -204,25 +179,12 @@ async function cleanYvmDir(yvmPath) {
     )
 }
 
-async function unzipFile(filePath, yvmPath) {
-    execSync(`unzip -o -q ${filePath} -d ${yvmPath}`)
-}
-
 async function saveVersion(version, yvmPath) {
     const filePath = path.join(yvmPath, '.version')
     fs.writeFileSync(filePath, JSON.stringify({ version }))
 }
 
-async function ensureScriptExecutable(filePath) {
-    if (!fs.existsSync(filePath)) {
-        log(`${filePath} does not exist`)
-        return
-    }
-    execSync(`chmod +x ${filePath}`)
-}
-
 async function run() {
-    preflightCheck(...dependencies)
     const config = getConfig()
     const { version, paths, useLocal } = config
     ensureDir(paths.yvm)
@@ -241,26 +203,18 @@ async function run() {
         }
         await downloadFile({
             source: version.downloadUrl,
-            destination: paths.zip,
+            destination: path.join(paths.yvm, 'yvm.js'),
         })
     }
     if (version.tagName) {
         log(`Installing Version: ${version.tagName}`)
     }
     await cleanYvmDir(paths.yvm)
-    await unzipFile(paths.zip, paths.yvm)
 
     const ongoingTasks = []
-    if (!useLocal) {
-        ongoingTasks.push(removeFile(paths.zip))
-    }
     if (version.tagName) {
         ongoingTasks.push(saveVersion(version.tagName, paths.yvm))
     }
-    ongoingTasks.push(
-        ensureScriptExecutable(paths.yvmSh),
-        ensureScriptExecutable(paths.yarnShim),
-    )
     try {
         const configureCommand = [
             'node',
@@ -272,7 +226,6 @@ async function run() {
         execSync(configureCommand)
     } catch (e) {
         log('Unable to configure shell')
-        log(`Run '${paths.yvmSh} configure-shell' to complete this step`)
     }
     await Promise.all(ongoingTasks)
 
@@ -290,6 +243,5 @@ if (!module.parent) {
 module.exports = {
     downloadFile,
     getConfig,
-    preflightCheck,
     run,
 }

@@ -141,3 +141,7 @@ clean_node_modules:
 .PHONY: clean_webpack_build
 clean_webpack_build:
 	rm -rf ${BUILD_DIR}
+
+.PHONY: clean
+clean: clean_node_modules clean_webpack_build
+	rm -rf ${ARTIFACT_DIR}
